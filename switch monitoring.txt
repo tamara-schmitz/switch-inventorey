@@ -4,16 +4,16 @@ Read own MAC DB, Read Switches, Query Switch's MAC table, parse port number and 
 MAC DB structure:
 Table - Switches: Switch ID | Switch Type | IP | MAC (Primary key: Switch ID)
 # Table - Devices: MAC | Switch | VLAN | Last Seen | Last Missing | First Seen (composited Primary key: MAC, Switch, VLAN)
-Table - Device Location Log: Time of Entry | MAC | VLAN | Switch | Up | Port | IP | Hostname (composited Primary key: Time of Entry, MAC, Switch, VLAN)
+Table - Device Location Log: Time of Entry | MAC | VLAN | Switch | Port | IP | Hostname (composited Primary key: Time of Entry, MAC, Switch, VLAN)
 Switch ID from Table Switches is used as reference in other tables
 
 (Cleanup could delete entries with a date older than X)
 
 From this the following information can be deduced and queried:
-- List all online / offline devices
+- List all devices seen on a day
 - List a device's change history
 - List all Switches and VLANs a device is connected to
-- List all devices on one switch port
+- List all devices on one switch (port)
 - List all devices in a VLAN
 
 Build a Devices relationship graph:
