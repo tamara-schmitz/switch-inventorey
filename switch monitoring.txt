@@ -1,0 +1,42 @@
+Basic functionality structogram:
+Read own MAC DB, Read Switches, Query Switch's MAC table, parse port number and MAC addresses, compare devices with Switch, if differences found do an alert, update DB.
+
+MAC DB structure:
+Table - Switches: Switch ID | Switch Type | IP | MAC (Primary key: Switch ID)
+# Table - Devices: MAC | Switch | VLAN | Last Seen | Last Missing | First Seen (composited Primary key: MAC, Switch, VLAN)
+Table - Device Location Log: Time of Entry | MAC | VLAN | Switch | Up | Port | IP | Hostname (composited Primary key: Time of Entry, MAC, Switch, VLAN)
+Switch ID from Table Switches is used as reference in other tables
+
+(Cleanup could delete entries with a date older than X)
+
+From this the following information can be deduced and queried:
+- List all online / offline devices
+- List a device's change history
+- List all Switches and VLANs a device is connected to
+- List all devices on one switch port
+- List all devices in a VLAN
+
+Build a Devices relationship graph:
+start with one switch. each vlan is a child of switch, each port is a child of vlan. each devices is a leaf of a port.
+oh. we found a mac of one of our switches? look at the children on switch 1's port where we found our switch 2. see if our switch 2 has these children on a different port as to where switch 1 is connected to. those children who are, should be removed from that port on switch 1. if we are left with children that we did not find on any over port (unique MAC) create a "black box" switch on that port and add the left over children and switch 2 to it (switch bb has s1 on port 1, s2 on port 2 and the left over children on port 3).
+TODO how do we deal if it turns out that the black box switch is composed of another known switch and a blackbox?
+
+Switch Access SSH:
+HPE: `show mac-address`
+Cisco: `show mac-address-table`
+
+main switch: main 10.161.56.25 
+
+SMNP? Perhaps als Query? tool: smnp-walk
+https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-an-snmp-daemon-and-client-on-ubuntu-14-04
+https://www.cisco.com/c/en/us/support/docs/ip/simple-network-management-protocol-snmp/44800-mactoport44800.html
+https://networkengineering.stackexchange.com/questions/2900/using-snmp-to-retrieve-the-arp-and-mac-address-tables-from-a-switch
+
+MAC table querying and parsing has to be vendor / device specific.
+
+Try making it in C, to learn C. Linux only.
+
+I can put this into a Docker container but ppl may dislike me for it...
+
+C:
+Run a command with return, use popen or exec()
