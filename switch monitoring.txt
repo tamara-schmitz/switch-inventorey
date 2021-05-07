@@ -25,7 +25,7 @@ Switch Access SSH:
 HPE: `show mac-address`
 Cisco: `show mac-address-table`
 
-main switch: main 10.161.56.25 
+main switch: public 10.161.56.25 
 
 SMNP? Perhaps als Query? tool: smnp-walk
 https://www.digitalocean.com/community/tutorials/how-to-install-and-configure-an-snmp-daemon-and-client-on-ubuntu-14-04
@@ -40,3 +40,36 @@ I can put this into a Docker container but ppl may dislike me for it...
 
 C:
 Run a command with return, use popen or exec()
+
+
+Mellanox - step by step: query the MACs:
+1.3.6.1.2.1.17.1.1 - Switch MAC address
+1.3.6.1.2.1.17.7.1.2.2 - MAC address table
+1.3.6.1.2.1.17.7.1.4.3.1.1 - VLANs names
+1.3.6.1.2.1.47.1.1.1.1.11.1 - Serial Number
+1.3.6.1.2.1.31.1.1.1.18 - ifAlias
+1.0.8802.1.1.2.1.4.1.1.9 - LLDP
+
+Cisco SNMP MIBs and their OIDs:
+dot1dTpFdbAddress .1.3.6.1.2.1.17.4.3.1.1 
+dot1dTpFdbPort .1.3.6.1.2.1.17.4.3.1.2
+dot1dBasePortIfIndex .1.3.6.1.2.1.17.1.4.1.2
+vtpVlanState .1.3.6.1.4.1.9.9.46.1.3.1.1.2
+obtain MACS on VLAN1 .1.3.6.1.2.1.17.4.3.1.1
+ifName of ifIndex .1.3.6.1.2.1.31.1.1.1.1
+
+CISCO - step by step: query the MACs:
+retrieve VLANs of public community .1.3.6.1.4.1.9.9.46.1.3.1.1.2
+obtain MACS on VLAN1 using pulbic@1 .1.3.6.1.2.1.17.4.3.1.1
+obtain bridge port number of VLAN1: .1.3.6.1.2.1.17.4.3.1.2
+map the bridge port to the ifIndex: .1.3.6.1.2.1.17.1.4.1.2
+ifName of ifIndex .1.3.6.1.2.1.31.1.1.1.1
+Link a MAC address to the port on which the address was learned.
+    From Step 1, the MAC address is:
+        17.4.3.1.1.0.0.12.7.172.8 = Hex: 00 00 0C 07 AC 08
+    From Step 2, the bridge port tells that the MAC address belongs to bridge port number 13:
+        17.4.3.1.2.0.0.12.7.172.8 = 13 
+    From Step 3, the bridge port number 13 has ifIndex number 2:
+        17.1.4.1.2.13 = 2
+    From Step 4, the ifIndex 2 corresponds to port Fast Ethernet 0/1:
+        ifMIB.ifMIBObjects.ifXTable.ifXEntry.ifName.2 = Fa0/1
