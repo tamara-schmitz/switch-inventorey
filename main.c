@@ -56,8 +56,13 @@ int main(int argc, char *argv[], char *envp[]) {
 	walk_oid("1.3.6.1.2.1.17.1.1", ss, pdu_response, NULL, NULL);
 
 	// MAC table
-	create_pdu_getrequest("1.3.6.1.2.1.17.7.1.2.2", &pdu_send);
-	do_request(ss, pdu_send, pdu_response);
+	//create_pdu_getrequest("1.3.6.1.2.1.17.7.1.2.2", &pdu_send);
+	//do_request(ss, pdu_send, pdu_response);
+	oid *oNext = NULL;
+	size_t oNext_size = 0;
+	while (walk_oid("1.3.6.1.2.1.17.7.1.2.2", ss, pdu_response, &oNext, &oNext_size)) {
+		// pass
+	}
 	if (pdu_response)
 		snmp_free_pdu(pdu_response);
 
@@ -127,40 +132,70 @@ int create_session_v3(struct snmp_session * session, const char *peername, const
 int walk_oid(const char *str_oid, struct snmp_session * session, struct snmp_pdu * response_pdu, oid ** oNext, size_t * oNext_len) {
 	// either interprets str_oid and returns response along with next OID in subtree if applicable.
 	// or if next OID is given, next OID processed instead if subtree of str_oid
-	// returns not null if a next oid exists.
+	// returns >0 if a next oid exists.
+	// returns 0 if no next oid exists. response_pdu may or may not be null
+	// returns <0 on error
 	struct snmp_pdu *pdu_request;
 	oid ss_oid[MAX_OID_LEN];
 	size_t ss_oid_len = MAX_OID_LEN;
+	if (response_pdu)
+		snmp_free_pdu(response_pdu);
+	response_pdu = NULL;
 
 	read_objid(str_oid, ss_oid, &ss_oid_len); // interpret oid from string
 
-	// return if oNext is not a common prefix to str_oid
-	if (*oNext && netsnmp_oid_find_prefix(ss_oid, ss_oid_len, *oNext, *oNext_len) <= 0)
+	printf("\nStarto...");
+	// return if str_oid is the same as oNext
+	if (oNext && *oNext && oNext_len && 
+			!netsnmp_oid_equals(ss_oid, ss_oid_len, *oNext, *oNext_len))
 		return 0;
+	printf("str-oid was not equal to oNext...");
 
-	pdu_request = snmp_pdu_create(SNMP_MSG_GETNEXT);
-	if (oNext) {
-		if (!snmp_add_null_var(pdu_request, *oNext, *oNext_len)) // add a varbind with OID only 
+	// return if oNext is not a common prefix to str_oid (means we left the
+	// subtree)
+	if (oNext && *oNext && oNext_len && 
+			netsnmp_oid_find_prefix(ss_oid, ss_oid_len, *oNext, *oNext_len) <= 0)
+		return 0;
+	printf("oNext was a prefix to str_oid...");
+
+	// do request
+	if (oNext && *oNext) {
+		pdu_request = snmp_pdu_create(SNMP_MSG_GETNEXT);
+		if (!snmp_add_null_var(pdu_request, *oNext, *oNext_len)) { // add a varbind with OID only 
 			snmp_log(LOG_ERR, "Appending next varbind to PDU during walk has failed\n");
+			return -1;
+		}
 	} else {
-		if (!snmp_add_null_var(pdu_request, ss_oid, ss_oid_len)) // add a varbind with OID only 
+		pdu_request = snmp_pdu_create(SNMP_MSG_GET);
+		if (!snmp_add_null_var(pdu_request, ss_oid, ss_oid_len)) { // add a varbind with OID only 
 			snmp_log(LOG_ERR, "Appending varbind to PDU during walk has failed\n");
-
+			return -1;
+		}
 	}
-	do_request(session, pdu_request, response_pdu);
+	if (do_request(session, pdu_request, response_pdu) == STAT_SUCCESS) {
+		if (!oNext || !oNext_len) {
+			printf("oNext and oNext_len were null, cannot copy OID to oNext");
+			return -1;
+		} else if (*oNext && *oNext_len) {
+			// if OID in response is not the same as in request, there may be a next OID
+			if (!netsnmp_oid_equals(response_pdu->variables->name, response_pdu->variables->name_length, *oNext, *oNext_len)) {
+				printf("oNext was not the same...");
+				memmove((char *) *oNext, (char *) response_pdu->variables->name,
+						response_pdu->variables->name_length * sizeof(oid));
+				//*oNext = snmp_duplicate_objid(response_pdu->variables->name, response_pdu->variables->name_length);
+				*oNext_len = response_pdu->variables->name_length;
 
-	// return if response
-	if (!netsnmp_oid_equals(ss_oid, ss_oid_len, *oNext, *oNext_len)) {
-		return 0;
-	}
-
-	if (netsnmp_oid_equals(response_pdu->variables->name, response_pdu->variables->name_length, *oNext, *oNext_len)) {
-		//if (oNext)
-		//free(oNext);
-		oNext = snmp_duplicate_objid(response_pdu->variables->name, response_pdu->variables->name_length);
-		oNext_len = response_pdu->variables->name_length;
-
-		return 1;
+				printf("a new oNext was set...");
+				return 1;
+			}
+			return 0;
+		} else {
+			printf("oNext wasnt set, copy response...");
+			printf((char*) response_pdu->variables);
+			*oNext = snmp_duplicate_objid(response_pdu->variables->name,
+					response_pdu->variables->name_length);
+			*oNext_len = response_pdu->variables->name_length;
+		}
 	}
 
 	return 0;

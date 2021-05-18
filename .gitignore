@@ -3,5 +3,6 @@ out/
 *.o
 *.a
 *.s
+vgcore.*
 
 *.db
