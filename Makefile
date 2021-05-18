@@ -22,6 +22,6 @@ release: main.c
 	@mkdir -p $(OUT)
 	$(CC) $(CFLAGS) $(CFLAGS_REL) $? $(LDFLAGS) $(LIBS) -o $(OUT)/$@
 
-sqlite-test: sqlite.c
+test-sqlite: test-sqlite.c
 	@mkdir -p $(OUT)
 	$(CC) $(CFLAGS) $(CFLAGS_DEV) $? $(LDFLAGS) $(LIBS) -o $(OUT)/$@
