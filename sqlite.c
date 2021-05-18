@@ -83,11 +83,15 @@ int main(int argc, char *argv[], char *envp[]) {
                     case SQLITE_FLOAT:
                     case SQLITE3_TEXT: {
                         const void *ptr_txt = sqlite3_column_text(sql_statement, i);
-                        int size_txt = sqlite3_column_bytes(sql_statement, i);
-                        char* text = malloc(size_txt);
+                        size_t size_txt = sqlite3_column_bytes(sql_statement, i);
+
+			// copy text. and we need to add a null terminator
+                        char* text = malloc(size_txt+1);
+			text[size_txt] = '\0';
                         memcpy(text, ptr_txt, size_txt);
                         printf("Text: %s \n", text);
-                        //free(text);
+			printf("size_txt == strlen(text): %i\n", size_txt == strlen(text));
+                        free(text);
                         break;
                     }
                     case SQLITE_BLOB: {

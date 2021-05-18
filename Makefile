@@ -1,7 +1,7 @@
 CFLAGS     = -fPIE -fstack-protector-strong
 CFLAGS_REL = -O3 -D_FORTIFY_SOURCE=2
 CFLAGS_DEV = -g
-LIBS       = -lnetsnmp
+LIBS       = -lnetsnmp -lsqlite3
 LDFLAGS    = -Wall -Wno-unused-variable
 OUT        = out
 
@@ -21,3 +21,7 @@ assembly: main.c
 release: main.c
 	@mkdir -p $(OUT)
 	$(CC) $(CFLAGS) $(CFLAGS_REL) $? $(LDFLAGS) $(LIBS) -o $(OUT)/$@
+
+sqlite-test: sqlite.c
+	@mkdir -p $(OUT)
+	$(CC) $(CFLAGS) $(CFLAGS_DEV) $? $(LDFLAGS) $(LIBS) -o $(OUT)/$@
