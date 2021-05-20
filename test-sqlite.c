@@ -20,11 +20,28 @@ int main(int argc, char *argv[], char *envp[]) {
 
 	// Create Tables from .sql
 	char * sql_text = NULL;
-	size_t sql_text_size;
+	size_t sql_text_size = 0;
 	char * errmsgs;
-	FILE * fh_sql = fopen("create-tables.sql", "r");
-	if (!fh_sql && fread(sql_text, sizeof(char), 1048576, fh_sql) <= 0)
-		fprintf(stderr, "Could not open or read SQL file for DB table creation!");
+	FILE * fh_sql = fopen("./create-tables.sql", "r");
+	if (fh_sql == NULL)
+		fprintf(stderr, "Error opening SQL file!");
+	
+	bool continue_read = true;
+	const int READ_CHUNK = sizeof(char) * 32;
+	while (continue_read) {
+		// expand string
+		sql_text_size += READ_CHUNK;
+		sql_text = realloc(sql_text, sql_text_size);
+
+		//if (read(fh_sql, sql_text + sql_text_size - READ_CHUNK, READ_CHUNK) <= 0) {
+		if (fread(sql_text + sql_text_size - READ_CHUNK - 1, 1, READ_CHUNK, fh_sql) <= 0) {
+			if (ferror(fh_sql)) {
+				fprintf(stderr, "Could read SQL file for DB table creation!\n");
+			} // feof(fh_sql)
+			continue_read = false;
+		}
+	}
+	printf("The SQL file contains: \n%s", sql_text);
 	fclose(fh_sql);
 
 	status = sqlite3_exec(db_conn, sql_text, NULL, NULL, &errmsgs);
