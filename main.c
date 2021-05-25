@@ -5,11 +5,11 @@
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
 
-void create_session_v12(struct snmp_session * session, const char *peername, const char *community, const int version);
-int create_session_v3(struct snmp_session * session, const char *peername, const char *sec_name, const char *passphrase, oid *sec_authproto);
-int walk_oid(const char *str_oid, struct snmp_session * session, struct snmp_pdu * response_pdu, oid ** oNext, size_t * oNext_len);
-void create_pdu_getrequest(const char *str_oid, struct snmp_pdu ** pdu);
-int do_request(struct snmp_session * session, struct snmp_pdu * request_pdu, struct snmp_pdu * response_pdu);
+void create_session_v12(struct snmp_session *session, const char *peername, const char *community, const int version);
+int create_session_v3(struct snmp_session *session, const char *peername, const char *sec_name, const char *passphrase, oid *sec_authproto);
+int walk_oid(struct snmp_session *session, const char *str_oid, const oid * prev_oid, const size_t prev_oid_size, struct snmp_pdu *response_pdu);
+void create_pdu_getrequest(const char *str_oid, struct snmp_pdu **pdu);
+int do_request(struct snmp_session *session, struct snmp_pdu *request_pdu, struct snmp_pdu *response_pdu);
 
 int main(int argc, char *argv[], char *envp[]) {
 	struct snmp_session session_initial;
@@ -53,15 +53,21 @@ int main(int argc, char *argv[], char *envp[]) {
 
 	// -- Mellanox queries
 	// switch's MAC
-	walk_oid("1.3.6.1.2.1.17.1.1", ss, pdu_response, NULL, NULL);
+	walk_oid(ss, "1.3.6.1.2.1.17.1.1", NULL, 0, pdu_response);
 
 	// MAC table
 	//create_pdu_getrequest("1.3.6.1.2.1.17.7.1.2.2", &pdu_send);
 	//do_request(ss, pdu_send, pdu_response);
-	oid *oNext = NULL;
-	size_t oNext_size = 0;
-	while (walk_oid("1.3.6.1.2.1.17.7.1.2.2", ss, pdu_response, &oNext, &oNext_size)) {
-		// pass
+	oid *prevOID = NULL;
+	size_t prevOID_size = 0;
+	while (walk_oid(ss, "1.3.6.1.2.1.17.7.1.2.2", prevOID, prevOID_size, pdu_response) == 0) {
+		printf("A while loop iteration...");
+		for (netsnmp_variable_list *vars = pdu_response->variables; vars; 
+				vars = vars->next_variable) {
+			print_variable(vars->name, vars->name_length, vars);
+			prevOID = snmp_duplicate_objid(vars->name, vars->name_length);
+			prevOID_size = vars->name_length;
+		}
 	}
 	if (pdu_response)
 		snmp_free_pdu(pdu_response);
@@ -91,7 +97,7 @@ int main(int argc, char *argv[], char *envp[]) {
 	return 0;
 }
 
-void create_session_v12(struct snmp_session * session, const char *peername, const char *community, const int version) {
+void create_session_v12(struct snmp_session *session, const char *peername, const char *community, const int version) {
 	snmp_sess_init(session);
 	session->peername = strdup(peername);
 
@@ -100,7 +106,7 @@ void create_session_v12(struct snmp_session * session, const char *peername, con
 	session->community_len = strlen(community);
 }
 
-int create_session_v3(struct snmp_session * session, const char *peername, const char *sec_name, const char *passphrase, oid *sec_authproto) {
+int create_session_v3(struct snmp_session *session, const char *peername, const char *sec_name, const char *passphrase, oid *sec_authproto) {
 	int status;
 	const char *pass = strdup(passphrase);
 
@@ -129,79 +135,56 @@ int create_session_v3(struct snmp_session * session, const char *peername, const
 	return status;
 }
 
-int walk_oid(const char *str_oid, struct snmp_session * session, struct snmp_pdu * response_pdu, oid ** oNext, size_t * oNext_len) {
-	// either interprets str_oid and returns response along with next OID in subtree if applicable.
-	// or if next OID is given, next OID processed instead if subtree of str_oid
-	// returns >0 if a next oid exists.
-	// returns 0 if no next oid exists. response_pdu may or may not be null
+// rewrite
+int walk_oid(struct snmp_session *session, const char *str_oid, const oid * prev_oid, const size_t prev_oid_size, struct snmp_pdu *response_pdu) {
+	// returns 0 if a next oid exists.
+	// returns >0 if no next oid exists. response_pdu may or may not be null
 	// returns <0 on error
-	struct snmp_pdu *pdu_request;
-	oid ss_oid[MAX_OID_LEN];
-	size_t ss_oid_len = MAX_OID_LEN;
+	oid parent_oid[MAX_OID_LEN];
+	size_t parent_oid_size = MAX_OID_LEN;
+	struct snmp_pdu *request_pdu;
 	if (response_pdu)
 		snmp_free_pdu(response_pdu);
 	response_pdu = NULL;
 
-	read_objid(str_oid, ss_oid, &ss_oid_len); // interpret oid from string
+	read_objid(str_oid, parent_oid, &parent_oid_size);
 
-	printf("\nStarto...");
-	// return if str_oid is the same as oNext
-	if (oNext && *oNext && oNext_len && 
-			!netsnmp_oid_equals(ss_oid, ss_oid_len, *oNext, *oNext_len))
-		return 0;
-	printf("str-oid was not equal to oNext...");
-
-	// return if oNext is not a common prefix to str_oid (means we left the
-	// subtree)
-	if (oNext && *oNext && oNext_len && 
-			netsnmp_oid_find_prefix(ss_oid, ss_oid_len, *oNext, *oNext_len) <= 0)
-		return 0;
-	printf("oNext was a prefix to str_oid...");
-
-	// do request
-	if (oNext && *oNext) {
-		pdu_request = snmp_pdu_create(SNMP_MSG_GETNEXT);
-		if (!snmp_add_null_var(pdu_request, *oNext, *oNext_len)) { // add a varbind with OID only 
+	if (!prev_oid) {
+		// query the parent
+		request_pdu = snmp_pdu_create(SNMP_MSG_GET);
+		if (!snmp_add_null_var(request_pdu, parent_oid, parent_oid_size)) { // add a varbind with OID only 
 			snmp_log(LOG_ERR, "Appending next varbind to PDU during walk has failed\n");
 			return -1;
 		}
+
+		if (do_request(session, request_pdu, response_pdu) != STAT_SUCCESS)
+			return -1;
+
+		return 0;
 	} else {
-		pdu_request = snmp_pdu_create(SNMP_MSG_GET);
-		if (!snmp_add_null_var(pdu_request, ss_oid, ss_oid_len)) { // add a varbind with OID only 
-			snmp_log(LOG_ERR, "Appending varbind to PDU during walk has failed\n");
+		// query next obj
+		request_pdu = snmp_pdu_create(SNMP_MSG_GETNEXT);
+		if (!snmp_add_null_var(request_pdu, prev_oid, prev_oid_size)) { // add a varbind with OID only 
+			snmp_log(LOG_ERR, "Appending next varbind to PDU during walk has failed\n");
 			return -1;
 		}
-	}
-	if (do_request(session, pdu_request, response_pdu) == STAT_SUCCESS) {
-		if (!oNext || !oNext_len) {
-			printf("oNext and oNext_len were null, cannot copy OID to oNext");
-			return -1;
-		} else if (*oNext && *oNext_len) {
-			// if OID in response is not the same as in request, there may be a next OID
-			if (!netsnmp_oid_equals(response_pdu->variables->name, response_pdu->variables->name_length, *oNext, *oNext_len)) {
-				printf("oNext was not the same...");
-				memmove((char *) *oNext, (char *) response_pdu->variables->name,
-						response_pdu->variables->name_length * sizeof(oid));
-				//*oNext = snmp_duplicate_objid(response_pdu->variables->name, response_pdu->variables->name_length);
-				*oNext_len = response_pdu->variables->name_length;
 
-				printf("a new oNext was set...");
-				return 1;
-			}
+		if (do_request(session, request_pdu, response_pdu) != STAT_SUCCESS)
+			return -1;
+
+		netsnmp_variable_list *vars = response_pdu->variables;
+		if (vars && vars->name && vars->name_length && 
+				netsnmp_oid_equals(prev_oid, prev_oid_size, vars->name, vars->name_length) &&
+				netsnmp_oid_is_subtree(parent_oid, parent_oid_size, vars->name, vars->name_length) == 0) {
 			return 0;
 		} else {
-			printf("oNext wasnt set, copy response...");
-			printf((char*) response_pdu->variables);
-			*oNext = snmp_duplicate_objid(response_pdu->variables->name,
-					response_pdu->variables->name_length);
-			*oNext_len = response_pdu->variables->name_length;
+			return 1; // end of the list tree
 		}
 	}
 
-	return 0;
 }
 
-void create_pdu_getrequest(const char *str_oid, struct snmp_pdu ** pdu) {
+void create_pdu_getrequest(const char *str_oid, struct snmp_pdu **pdu) {
 	oid ss_oid[MAX_OID_LEN];
 	size_t ss_oid_len = MAX_OID_LEN;
 	read_objid(str_oid, ss_oid, &ss_oid_len); // interpret oid from string
@@ -213,8 +196,11 @@ void create_pdu_getrequest(const char *str_oid, struct snmp_pdu ** pdu) {
 		snmp_log(LOG_ERR, "Appending varbind to PDU failed\n");
 }
 
-int do_request(struct snmp_session * session, struct snmp_pdu * request_pdu, struct snmp_pdu * response_pdu) {
+int do_request(struct snmp_session *session, struct snmp_pdu *request_pdu, struct snmp_pdu *response_pdu) {
 	int ss_status;
+	if (response_pdu)
+		snmp_free_pdu(response_pdu);
+	response_pdu = NULL;
 
 	// Send Request and Read Response
 	ss_status = snmp_synch_response(session, request_pdu, &response_pdu);
