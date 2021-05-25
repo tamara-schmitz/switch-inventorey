@@ -5,9 +5,14 @@
 #include <string.h>
 #include <sqlite3.h>
 
+int readEntireFileInChunks(FILE *fh, const int chunk_size, char **buffer);
+
 int main(int argc, char *argv[], char *envp[]) {
-	sqlite3 *db_conn;
+	sqlite3 *db_conn = NULL;
 	int status;
+	char *errmsgs = NULL;
+	char *sql_text = NULL;
+	FILE *fh_sql = NULL;
 
 	// Open DB
 	status = sqlite3_open("test-db.db", &db_conn);
@@ -19,28 +24,11 @@ int main(int argc, char *argv[], char *envp[]) {
 	fprintf(stderr, "Opened database successfully\n");
 
 	// Create Tables from .sql
-	char * sql_text = NULL;
-	size_t sql_text_size = 0;
-	char * errmsgs;
-	FILE * fh_sql = fopen("./create-tables.sql", "r");
+	fh_sql = fopen("./create-tables.sql", "r");
 	if (fh_sql == NULL)
 		fprintf(stderr, "Error opening SQL file!");
-	
-	bool continue_read = true;
-	const int READ_CHUNK = sizeof(char) * 32;
-	while (continue_read) {
-		// expand string
-		sql_text_size += READ_CHUNK;
-		sql_text = realloc(sql_text, sql_text_size);
 
-		//if (read(fh_sql, sql_text + sql_text_size - READ_CHUNK, READ_CHUNK) <= 0) {
-		if (fread(sql_text + sql_text_size - READ_CHUNK - 1, 1, READ_CHUNK, fh_sql) <= 0) {
-			if (ferror(fh_sql)) {
-				fprintf(stderr, "Could read SQL file for DB table creation!\n");
-			} // feof(fh_sql)
-			continue_read = false;
-		}
-	}
+	readEntireFileInChunks(fh_sql, 512, &sql_text);
 	printf("The SQL file contains: \n%s", sql_text);
 	fclose(fh_sql);
 
@@ -122,3 +110,31 @@ int main(int argc, char *argv[], char *envp[]) {
 	sqlite3_close(db_conn);
 	return 0;
 }
+
+int readEntireFileInChunks(FILE *fh, const int chunk_size, char **buffer) {
+	// buffer must be empty
+	size_t buff_size = 0;
+	if (fh == NULL) {
+		fprintf(stderr, "File handle invalid!");
+		return -1;
+	}
+	*buffer = NULL;
+	// read in chunks
+	bool continue_read = true;
+	while (continue_read) {
+		// expand string
+		buff_size += chunk_size * sizeof(char);
+		*buffer = realloc(*buffer, buff_size);
+
+		if (fread(*buffer + buff_size - chunk_size * sizeof(char),
+					sizeof(char), chunk_size, fh) <= 0) {
+			if (ferror(fh)) {
+				fprintf(stderr, "Could not read file for DB table creation!\n");
+				return -2;
+			} // feof(fh_sql)
+			continue_read = false; // we read less than the buffer was in size
+		}
+	}
+	return 0;
+}
+
