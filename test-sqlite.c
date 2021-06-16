@@ -112,6 +112,8 @@ int main(int argc, char *argv[], char *envp[]) {
 }
 
 int readEntireFileInChunks(FILE *fh, const int chunk_size, char **buffer) {
+	//* this could be done better with mmap.
+
 	// buffer must be empty
 	size_t buff_size = 0;
 	if (fh == NULL) {

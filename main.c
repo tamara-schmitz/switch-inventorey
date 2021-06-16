@@ -5,9 +5,10 @@
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
 
+
 void create_session_v12(struct snmp_session *session, const char *peername, const char *community, const int version);
 int create_session_v3(struct snmp_session *session, const char *peername, const char *sec_name, const char *passphrase, oid *sec_authproto);
-int walk_oid(struct snmp_session *session, const char *str_oid, const oid * prev_oid, const size_t prev_oid_size, struct snmp_pdu *response_pdu);
+int walk_oid(struct snmp_session *session, const char *str_oid, oid * prev_oid, size_t prev_oid_size, struct snmp_pdu *response_pdu);
 void create_pdu_getrequest(const char *str_oid, struct snmp_pdu **pdu);
 int do_request(struct snmp_session *session, struct snmp_pdu *request_pdu, struct snmp_pdu *response_pdu);
 
@@ -53,15 +54,36 @@ int main(int argc, char *argv[], char *envp[]) {
 
 	// -- Mellanox queries
 	// switch's MAC
-	walk_oid(ss, "1.3.6.1.2.1.17.1.1", NULL, 0, pdu_response);
+	oid *prevOID = NULL;
+	size_t prevOID_size = 0;
+	while (walk_oid(ss, "1.3.6.1.2.1.17.1.1", prevOID, prevOID_size, pdu_response) == 0) {
+		printf("A while loop iteration... prev oid, %ld\n", *prevOID);
+		if (!pdu_response) {
+			printf("  While loop was empty..\n");
+			break;
+		}
+		for (netsnmp_variable_list *vars = pdu_response->variables; vars; 
+				vars = vars->next_variable) {
+			print_variable(vars->name, vars->name_length, vars);
+			prevOID = snmp_duplicate_objid(vars->name, vars->name_length);
+			prevOID_size = vars->name_length;
+		}
+	}
+	if (pdu_response)
+		snmp_free_pdu(pdu_response);
+
 
 	// MAC table
 	//create_pdu_getrequest("1.3.6.1.2.1.17.7.1.2.2", &pdu_send);
 	//do_request(ss, pdu_send, pdu_response);
-	oid *prevOID = NULL;
-	size_t prevOID_size = 0;
+	prevOID = NULL;
+	prevOID_size = 0;
 	while (walk_oid(ss, "1.3.6.1.2.1.17.7.1.2.2", prevOID, prevOID_size, pdu_response) == 0) {
-		printf("A while loop iteration...");
+		printf("A while loop iteration... prev oid, %ld\n", *prevOID);
+		if (!pdu_response) {
+			printf("  While loop was empty..\n");
+			break;
+		}
 		for (netsnmp_variable_list *vars = pdu_response->variables; vars; 
 				vars = vars->next_variable) {
 			print_variable(vars->name, vars->name_length, vars);
@@ -136,7 +158,7 @@ int create_session_v3(struct snmp_session *session, const char *peername, const 
 }
 
 // rewrite
-int walk_oid(struct snmp_session *session, const char *str_oid, const oid * prev_oid, const size_t prev_oid_size, struct snmp_pdu *response_pdu) {
+int walk_oid(struct snmp_session *session, const char *str_oid, oid * prev_oid, size_t prev_oid_size, struct snmp_pdu *response_pdu) {
 	// returns 0 if a next oid exists.
 	// returns >0 if no next oid exists. response_pdu may or may not be null
 	// returns <0 on error
@@ -150,16 +172,24 @@ int walk_oid(struct snmp_session *session, const char *str_oid, const oid * prev
 	read_objid(str_oid, parent_oid, &parent_oid_size);
 
 	if (!prev_oid) {
-		// query the parent
+		// no prev so query the parent
 		request_pdu = snmp_pdu_create(SNMP_MSG_GET);
 		if (!snmp_add_null_var(request_pdu, parent_oid, parent_oid_size)) { // add a varbind with OID only 
 			snmp_log(LOG_ERR, "Appending next varbind to PDU during walk has failed\n");
 			return -1;
 		}
 
-		if (do_request(session, request_pdu, response_pdu) != STAT_SUCCESS)
+		int stat = do_request(session, request_pdu, response_pdu);
+		if (stat != STAT_SUCCESS)
 			return -1;
 
+		// if no response, look for a child. 
+		if (!response_pdu) {
+			printf("no such oid... trying to getnext \n");
+			return walk_oid(session, str_oid, parent_oid, parent_oid_size, response_pdu);
+		}
+
+		// SUCCESS
 		return 0;
 	} else {
 		// query next obj
@@ -169,15 +199,20 @@ int walk_oid(struct snmp_session *session, const char *str_oid, const oid * prev
 			return -1;
 		}
 
-		if (do_request(session, request_pdu, response_pdu) != STAT_SUCCESS)
+		if (do_request(session, request_pdu, response_pdu) != STAT_SUCCESS || !response_pdu) {
+			printf("Request not a success or response_pdu is null\n");
 			return -1;
+		}
 
 		netsnmp_variable_list *vars = response_pdu->variables;
 		if (vars && vars->name && vars->name_length && 
 				netsnmp_oid_equals(prev_oid, prev_oid_size, vars->name, vars->name_length) &&
 				netsnmp_oid_is_subtree(parent_oid, parent_oid_size, vars->name, vars->name_length) == 0) {
+			prev_oid = vars->name;
+			prev_oid_size = vars->name_length;
 			return 0;
 		} else {
+			printf("end of subtree \n");
 			return 1; // end of the list tree
 		}
 	}
