@@ -42,11 +42,17 @@ class snmp_conn_obj:
     
 @dataclass
 class machine:
-    mac: str
+    mac: tuple
     vlan: str
     switch: str
     port: int
     port_name: str
+    
+    def __hash__(self):
+        return hash(self.mac)
+    
+    def __eq__(self, other):
+        return hash(self) == hash(other)
     
 def snmp_result_extract_value(result_str: str):
     # Try for None / Null
@@ -112,7 +118,7 @@ def walk_objid(connection: snmp_conn_obj, objid: str) -> dict:
     
     return walk_dict
     
-def collect_ifPorts(connection: snmp_conn_obj, skip_if_down: bool = True) -> dict:
+def collect_ifPorts(connection: snmp_conn_obj, allowed_types: tuple = (6, 56), skip_if_down: bool = True) -> dict:
     """
     OIDs
     1.3.6.1.2.1.2.2.1.1 #ifIndex
@@ -129,9 +135,9 @@ def collect_ifPorts(connection: snmp_conn_obj, skip_if_down: bool = True) -> dic
         
         # check if physical port
         ifType = snmp_result_extract_value(get_objid(connection, "ifType." + str(id)))
-        # skip port if not an ethernet or fibre channel
+        # skip port if by default not an ethernet or fibre channel
         # see all types here https://www.iana.org/assignments/ianaiftype-mib/ianaiftype-mib
-        if ifType != 6 and ifType != 56:
+        if '*' not in allowed_types and ifType not in allowed_types:
             continue
         
         if skip_if_down:
@@ -159,12 +165,11 @@ def collect_bPorts(connection: snmp_conn_obj) -> dict:
     
     return bPort_to_ifPort
        
-def collect_machines(connection: snmp_conn_obj) -> list:
+def collect_machines(connection: snmp_conn_obj) -> set:
     # http://oid-info.com/get/1.3.6.1.2.1.2.2.1.3
-    ifPorts = collect_ifPorts(connection)
-    print(ifPorts)
+    ifPorts = collect_ifPorts(connection, allowed_types=('*'), skip_if_down=False)
+    #ifPorts = collect_ifPorts(connection)
     bPort_to_ifPort = collect_bPorts(connection)
-    print(bPort_to_ifPort)
     
     """
     # get learned macs and assosciate to phy port
@@ -172,11 +177,10 @@ def collect_machines(connection: snmp_conn_obj) -> list:
     1.3.6.1.2.1.17.4.3.1.3 #dot1dTpFdbStatus (3 = learned, 4 = self)
     1.3.6.1.2.1.17.4.3.1.2 #dot1dTpFdbPort (bridgebaseIndex)
     """
-    devices = []
+    devices = set()
     q_macs_on_bridge = walk_objid(connection, "1.3.6.1.2.1.17.4.3.1.1")
     for mac in q_macs_on_bridge.values():
         mac = snmp_result_extract_value(mac)
-        print(mac)
         
         # check if valid table entry
         q_mac_status = get_objid(connection, "1.3.6.1.2.1.17.4.3.1.3." + ".".join(map(str,mac)))
@@ -190,26 +194,25 @@ def collect_machines(connection: snmp_conn_obj) -> list:
         mac_bport = snmp_result_extract_value(q_mac_bport)
         
         # make device
-        devices.append(machine(mac, '', connection.address,
+        if mac_bport in bPort_to_ifPort and bPort_to_ifPort[mac_bport] in ifPorts:
+            devices.add(machine(mac, '', connection.address,
                                bPort_to_ifPort[mac_bport], ifPorts[bPort_to_ifPort[mac_bport]]))
         
-    print(devices)
+    return devices
     
     # check out vlans
     #print(walk_objid(connection, "1.3.6.1.2.1.17.7.1.4.3.1.1"))
     
 def main():
     conn = snmp_conn_obj("10.161.56.25")
-    #print(walk_objid(conn, ".1.3.6.1.2.1.17.7.1.2.2"))
-    #print(walk_objid(conn, ".1.3.6.1.2.1.17.7.1.1"))
-    #print(walk_objid(conn, ".1.3.6.1.2.1.1.1"))
-    #print(walk_objid(conn, ".1.3.6.1.2.1.1.3"))
-    #print(walk_objid(conn, ".1.3.6.1.2.1.17.7.1.1"))
-    #print(walk_objid(conn, "1.3.6.1.2.1.17.7.1.4.3.1.1"))
-    #print(walk_objid(conn, "1.3.6.1.2.1.31.1.1.1.18"))
-    #print(walk_objid(conn, "1.0.8802.1.1.2.1.4.1.1.9"))
+    conn2 = snmp_conn_obj("10.161.56.30")
     
-    collect_machines(conn)
+    machines0 = collect_machines(conn)
+    machines1 = collect_machines(conn2)
+    
+    print("Symmetric Difference: ", machines0.symmetric_difference(machines1))
+    print("Intersection: ", machines0.intersection(machines1))
+    
     
 if __name__ == "__main__":
     sys.exit(main())
