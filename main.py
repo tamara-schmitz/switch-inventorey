@@ -173,7 +173,6 @@ def collect_bPorts(connection: snmp_conn_obj) -> dict:
 def collect_machines(connection: snmp_conn_obj) -> set:
     # http://oid-info.com/get/1.3.6.1.2.1.2.2.1.3
     ifPorts = collect_ifPorts(connection, allowed_types=('*'), skip_if_down=False)
-    #ifPorts = collect_ifPorts(connection)
     bPort_to_ifPort = collect_bPorts(connection)
     
     """
@@ -190,8 +189,8 @@ def collect_machines(connection: snmp_conn_obj) -> set:
         # check if valid table entry
         q_mac_status = get_objid(connection, "1.3.6.1.2.1.17.4.3.1.3." + ".".join(map(str,mac)))
         mac_status = snmp_result_extract_value(q_mac_status)
-        # skip if MAC is not learned
-        if mac_status != 3:
+        # skip if MAC is not learned or static configuration
+        if mac_status != 3 and mac_status != 4:
             continue
         
         # get bPort
