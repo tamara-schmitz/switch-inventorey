@@ -16,37 +16,37 @@ import sys
 from dataclass_defines import *
 import snmp_get
 
-def collect_ifPorts(connection: snmp_conn_obj, allowed_types: tuple = (6, 56), skip_if_down: bool = True) -> dict:
+def collect_ifPorts(sw: Switch, allowed_types: tuple = (6, 56), skip_if_down: bool = True) -> Switch:
     """
     OIDs
     1.3.6.1.2.1.2.2.1.1 #ifIndex
     1.3.6.1.2.1.2.2.1.2 #ifDescr
     1.3.6.1.2.1.2.2.1.3 #ifType
+    1.3.6.1.2.1.2.2.1.6 #ifPhysAddress
     1.3.6.1.2.1.2.2.1.8 #ifOperStatus (1 = up, 2 = down)
     """
     
-    ifPorts = {}
-    q_ifIndexes = snmp_get.walk_objid(connection, "ifIndex")
+    sw.ports = {}
     
+    q_ifIndexes = snmp_get.walk_objid(sw.connection, "ifIndex")
     for id in q_ifIndexes.values():
+        ifPhyAddr = snmp_get.get_objid(sw.connection, "ifPhysAddress." + str(id))
+        ifDescr = snmp_get.get_objid(sw.connection, "ifDescr." + str(id))
         
         # check if physical port
-        ifType = snmp_get.get_objid(connection, "ifType." + str(id))
+        ifType = snmp_get.get_objid(sw.connection, "ifType." + str(id))
         # skip port if by default not an ethernet or fibre channel
         # see all types here https://www.iana.org/assignments/ianaiftype-mib/ianaiftype-mib
         if '*' not in allowed_types and ifType not in allowed_types:
             continue
         
-        if skip_if_down:
-            # check if link is up (optional)
-            ifOperStatus = snmp_get.get_objid(connection, "ifOperStatus." + str(id))
-            # skip port if link is down
-            if ifOperStatus == 2:
+        ifOperStatus = snmp_get.get_objid(sw.connection, "ifOperStatus." + str(id))
+        if skip_if_down and ifOperStatus == 2:
                 continue
         
-        ifPorts[id] = snmp_get.get_objid(connection, "ifDescr." + str(id))
+        sw.ports[id] = SPort(id, ifDescr, MAC(ifPhyAddr), ifOperStatus == 2, set(), "")
         
-    return ifPorts
+    return sw
 
 def collect_bPorts(connection: snmp_conn_obj) -> dict:
     """
@@ -60,10 +60,14 @@ def collect_bPorts(connection: snmp_conn_obj) -> dict:
     
     return bPort_to_ifPort
        
-def collect_machines(connection: snmp_conn_obj) -> set:
+def collect_devices(sw: Switch) -> Switch:
     # http://oid-info.com/get/1.3.6.1.2.1.2.2.1.3
-    ifPorts = collect_ifPorts(connection, allowed_types=('*'), skip_if_down=False)
-    bPort_to_ifPort = collect_bPorts(connection)
+    collect_ifPorts(sw, allowed_types=('*'), skip_if_down=True)
+    for port in sw.ports.values():
+        if port.mac != MAC((0, 0, 0, 0, 0, 0)):
+            sw.macs.append(port.mac)
+
+    bPort_to_ifPort = collect_bPorts(sw.connection)
     
     """
     # get learned macs and assosciate to phy port
@@ -71,38 +75,37 @@ def collect_machines(connection: snmp_conn_obj) -> set:
     1.3.6.1.2.1.17.4.3.1.3 #dot1dTpFdbStatus (3 = learned, 4 = self)
     1.3.6.1.2.1.17.4.3.1.2 #dot1dTpFdbPort (bridgebaseIndex)
     """
-    devices = set()
-    macs_on_bridge = snmp_get.walk_objid(connection, "1.3.6.1.2.1.17.4.3.1.1")
+    macs_on_bridge = snmp_get.walk_objid(sw.connection, "1.3.6.1.2.1.17.4.3.1.1")
     for mac in macs_on_bridge.values():
-        
         # check if valid table entry
-        mac_status = snmp_get.get_objid(connection, "1.3.6.1.2.1.17.4.3.1.3." + ".".join(map(str,mac)))
+        mac_status = snmp_get.get_objid(sw.connection, "1.3.6.1.2.1.17.4.3.1.3." + mac.as_decstr())
         # skip if MAC is not learned or static configuration
         if mac_status != 3 and mac_status != 4:
             continue
         
-        # get bPort
-        mac_bport = snmp_get.get_objid(connection, "1.3.6.1.2.1.17.4.3.1.2." + ".".join(map(str,mac)))
+        mac_bport = snmp_get.get_objid(sw.connection, "1.3.6.1.2.1.17.4.3.1.2." + mac.as_decstr())
         
-        # make device
-        if mac_bport in bPort_to_ifPort and bPort_to_ifPort[mac_bport] in ifPorts:
-            devices.add(machine(mac, '', connection.address,
-                               bPort_to_ifPort[mac_bport], ifPorts[bPort_to_ifPort[mac_bport]]))
+        mac_ifport = None
+        if mac_bport in bPort_to_ifPort:
+            mac_ifport = bPort_to_ifPort[mac_bport]
         
-    return devices
+        if mac_ifport in sw.ports:
+            sw.ports[mac_ifport].nodes.add(Node(mac, "", False))
+        
+    return sw
     
     # check out vlans
     #print(snmp_get.walk_objid(connection, "1.3.6.1.2.1.17.7.1.4.3.1.1"))
     
 def main():
-    conn = snmp_conn_obj("10.161.56.25")
-    conn2 = snmp_conn_obj("10.161.56.30")
+    switch0 = Switch("Mellanox", [], {}, snmp_conn_obj("10.161.56.25"))
+    switch1 = Switch("Cisco", [], {}, snmp_conn_obj("10.161.56.30"))
     
-    machines0 = collect_machines(conn)
-    machines1 = collect_machines(conn2)
+    collect_devices(switch0)
+    collect_devices(switch1)
     
-    print("Symmetric Difference: ", machines0.symmetric_difference(machines1))
-    print("Intersection: ", machines0.intersection(machines1))
+    print(switch0.ports)
+    print(switch1.ports)
     
     
 if __name__ == "__main__":

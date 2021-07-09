@@ -29,6 +29,7 @@ re_value_hexstr = re.compile(r".*Hex-STRING:((?: ..)+)\s*")
 re_value_str = re.compile(r".*STRING: (.+)\s*")
 
 def snmp_result_extract_value(result_str: str):
+    # TODO Improve detection of empty strings
     if not result_str:
         return None
 
@@ -48,14 +49,18 @@ def snmp_result_extract_value(result_str: str):
     # Try for Hex-String
     search_res = re_value_hexstr.match(result_str)
     if isinstance(search_res, re.Match):
-        return tuple(map(lambda x: int(x, 16), search_res.groups()[0].strip().split(' ')))
+        try: 
+            return MAC(search_res.groups()[0])
+        except AttributeError:
+            pass
     
     # Try for String
     search_res = re_value_str.match(result_str)
     if isinstance(search_res, re.Match):
         return search_res.groups()[0]
     
-    raise TypeError("Unknown result type for string " + result_str)
+    print("Warning! Unknown SNMP result type for string " + result_str)
+    return None
     
 def get_objid(connection: snmp_conn_obj, objid: str):
     cmd = [ "snmpget", "-O0sUX" ]
