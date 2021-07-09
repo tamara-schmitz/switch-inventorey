@@ -55,11 +55,14 @@ class machine:
         return hash(self) == hash(other)
     
 re_value_none = re.compile(r".*No Such Object available on this agent at this OID.*")
-re_value_integer = re.compile(r".*INTEGER: (?:(\d+)|(?:.+\((\d+)\)))$")
-re_value_hexstr = re.compile(r".*Hex-STRING:((?: ..)+)$")
-re_value_str = re.compile(r".*STRING: (.+)$")
+re_value_integer = re.compile(r".*INTEGER: (?:(\d+)|(?:.+\((\d+)\)))\s*")
+re_value_hexstr = re.compile(r".*Hex-STRING:((?: ..)+)\s*")
+re_value_str = re.compile(r".*STRING: (.+)\s*")
 
 def snmp_result_extract_value(result_str: str):
+    if not result_str:
+        return None
+
     # Try for None / Null
     search_res = re_value_none.match(result_str)
     if isinstance(search_res, re.Match):
@@ -85,7 +88,7 @@ def snmp_result_extract_value(result_str: str):
     
     raise TypeError("Unknown result type for string " + result_str)
     
-def get_objid(connection: snmp_conn_obj, objid: str) -> str:
+def get_objid(connection: snmp_conn_obj, objid: str):
     if connection.version == "1" or connection.version == "2c":
         get_exec = exec_cmd([ "snmpget", "-O0sUX", "-v" + connection.version,
                               "-c", connection.community,
@@ -98,7 +101,7 @@ def get_objid(connection: snmp_conn_obj, objid: str) -> str:
     else:
         raise AttributeError("Unknown SNMP Connection Version.")
         
-    return get_exec.stdout.decode("utf-8").strip()
+    return snmp_result_extract_value(get_exec.stdout.decode("utf-8"))
  
 def walk_objid(connection: snmp_conn_obj, objid: str) -> dict:
     if connection.version == "1" or connection.version == "2c":
@@ -117,9 +120,13 @@ def walk_objid(connection: snmp_conn_obj, objid: str) -> dict:
     if '' in walk_lines:
         walk_lines.remove('')
         
-    # split each line into key and value
-    walk_dict = dict(map(lambda line: map(str.strip, line.split('=')),
-                        walk_lines))
+    walk_dict = {}
+    # split each line into key and value, add to dict
+    for line in walk_lines:
+        walk_k_v = line.split('=')
+        walk_k_v[0] = walk_k_v[0].strip()
+        walk_k_v[1] = snmp_result_extract_value(walk_k_v[1])
+        walk_dict[walk_k_v[0]] = walk_k_v[1]
     
     return walk_dict
     
@@ -136,10 +143,9 @@ def collect_ifPorts(connection: snmp_conn_obj, allowed_types: tuple = (6, 56), s
     q_ifIndexes = walk_objid(connection, "ifIndex")
     
     for id in q_ifIndexes.values():
-        id = snmp_result_extract_value(id)
         
         # check if physical port
-        ifType = snmp_result_extract_value(get_objid(connection, "ifType." + str(id)))
+        ifType = get_objid(connection, "ifType." + str(id))
         # skip port if by default not an ethernet or fibre channel
         # see all types here https://www.iana.org/assignments/ianaiftype-mib/ianaiftype-mib
         if '*' not in allowed_types and ifType not in allowed_types:
@@ -147,12 +153,12 @@ def collect_ifPorts(connection: snmp_conn_obj, allowed_types: tuple = (6, 56), s
         
         if skip_if_down:
             # check if link is up (optional)
-            ifOperStatus = snmp_result_extract_value(get_objid(connection, "ifOperStatus." + str(id)))
+            ifOperStatus = get_objid(connection, "ifOperStatus." + str(id))
             # skip port if link is down
             if ifOperStatus == 2:
                 continue
         
-        ifPorts[id] = snmp_result_extract_value(get_objid(connection, "ifDescr." + str(id)))
+        ifPorts[id] = get_objid(connection, "ifDescr." + str(id))
         
     return ifPorts
 
@@ -164,9 +170,7 @@ def collect_bPorts(connection: snmp_conn_obj) -> dict:
     bPort_to_ifPort = {}
     q_bridge_indexes = walk_objid(connection, "1.3.6.1.2.1.17.1.4.1.1")
     for bport in q_bridge_indexes.values():
-        bport = snmp_result_extract_value(bport)
-        q_ifport_of_bport = get_objid(connection, "1.3.6.1.2.1.17.1.4.1.2." + str(bport))
-        bPort_to_ifPort[bport] = snmp_result_extract_value(q_ifport_of_bport)
+        bPort_to_ifPort[bport] = get_objid(connection, "1.3.6.1.2.1.17.1.4.1.2." + str(bport))
     
     return bPort_to_ifPort
        
@@ -182,20 +186,17 @@ def collect_machines(connection: snmp_conn_obj) -> set:
     1.3.6.1.2.1.17.4.3.1.2 #dot1dTpFdbPort (bridgebaseIndex)
     """
     devices = set()
-    q_macs_on_bridge = walk_objid(connection, "1.3.6.1.2.1.17.4.3.1.1")
-    for mac in q_macs_on_bridge.values():
-        mac = snmp_result_extract_value(mac)
+    macs_on_bridge = walk_objid(connection, "1.3.6.1.2.1.17.4.3.1.1")
+    for mac in macs_on_bridge.values():
         
         # check if valid table entry
-        q_mac_status = get_objid(connection, "1.3.6.1.2.1.17.4.3.1.3." + ".".join(map(str,mac)))
-        mac_status = snmp_result_extract_value(q_mac_status)
+        mac_status = get_objid(connection, "1.3.6.1.2.1.17.4.3.1.3." + ".".join(map(str,mac)))
         # skip if MAC is not learned or static configuration
         if mac_status != 3 and mac_status != 4:
             continue
         
         # get bPort
-        q_mac_bport = get_objid(connection, "1.3.6.1.2.1.17.4.3.1.2." + ".".join(map(str,mac)))
-        mac_bport = snmp_result_extract_value(q_mac_bport)
+        mac_bport = get_objid(connection, "1.3.6.1.2.1.17.4.3.1.2." + ".".join(map(str,mac)))
         
         # make device
         if mac_bport in bPort_to_ifPort and bPort_to_ifPort[mac_bport] in ifPorts:
