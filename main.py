@@ -54,14 +54,19 @@ class machine:
     def __eq__(self, other):
         return hash(self) == hash(other)
     
+re_value_none = re.compile(r".*No Such Object available on this agent at this OID.*")
+re_value_integer = re.compile(r".*INTEGER: (?:(\d+)|(?:.+\((\d+)\)))$")
+re_value_hexstr = re.compile(r".*Hex-STRING:((?: ..)+)$")
+re_value_str = re.compile(r".*STRING: (.+)$")
+
 def snmp_result_extract_value(result_str: str):
     # Try for None / Null
-    search_res = re.match(".*No Such Object available on this agent at this OID.*", result_str)
+    search_res = re_value_none.match(result_str)
     if isinstance(search_res, re.Match):
         return None
     
     # Try for Integer
-    search_res = re.match(".*INTEGER: (?:(\d+)|(?:.+\((\d+)\)))$", result_str)
+    search_res = re_value_integer.match(result_str)
     if isinstance(search_res, re.Match):
         if search_res.group(1):
             return int(search_res.group(1))
@@ -69,12 +74,12 @@ def snmp_result_extract_value(result_str: str):
             return int(search_res.group(2))
         
     # Try for Hex-String
-    search_res = re.match(".*Hex-STRING:((?: ..)+)$", result_str)
+    search_res = re_value_hexstr.match(result_str)
     if isinstance(search_res, re.Match):
         return tuple(map(lambda x: int(x, 16), search_res.groups()[0].strip().split(' ')))
     
     # Try for String
-    search_res = re.match(".*STRING: (.+)$", result_str)
+    search_res = re_value_str.match(result_str)
     if isinstance(search_res, re.Match):
         return search_res.groups()[0]
     
