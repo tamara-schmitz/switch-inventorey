@@ -8,3 +8,5 @@ vgcore.*
 *.db
 *.kate-swp
 
+*__pycache__/
+*.pyc
