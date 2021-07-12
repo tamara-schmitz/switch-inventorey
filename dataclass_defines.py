@@ -83,7 +83,7 @@ class Switch:
     connection: snmp_conn_obj
     
     def __hash__(self):
-        return hash((self.name, self.ips, self.macs))
+        return hash((self.name, self.connection.address))
     
     def __eq__(self, other):
         return hash(self) == hash(other)
@@ -107,6 +107,7 @@ class SPort:
 @dataclass
 class Node:
     mac: MAC
+    hostname: str
     vlan: str = ""
     is_switch: Switch = None
     

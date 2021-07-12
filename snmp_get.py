@@ -23,10 +23,10 @@ def exec_cmd(cmd, capture_output=False) -> subprocess.CompletedProcess:
     cmd.insert(1, "-n19")
     return subprocess.run(cmd, shell=False, capture_output=capture_output)
     
-re_value_none = re.compile(r".*No Such Object available on this agent at this OID.*")
-re_value_integer = re.compile(r".*INTEGER: (?:(\d+)|(?:.+\((\d+)\)))\s*")
-re_value_hexstr = re.compile(r".*Hex-STRING:((?: ..)+)\s*")
-re_value_str = re.compile(r".*STRING: (.+)\s*")
+re_value_none = re.compile(r".*No Such.*", flags=re.IGNORECASE)
+re_value_integer = re.compile(r".*INTEGER: (?:(\d+)|(?:.+\((\d+)\)))\s*", flags=re.IGNORECASE)
+re_value_hexstr = re.compile(r".*Hex-STRING:((?: ..)+)\s*", flags=re.IGNORECASE)
+re_value_str = re.compile(r".*(?:(?:STRING)|(?:IpAddress)): (.+)\s*", flags=re.IGNORECASE)
 
 def snmp_result_extract_value(result_str: str):
     # TODO Improve detection of empty strings
@@ -57,7 +57,10 @@ def snmp_result_extract_value(result_str: str):
     # Try for String
     search_res = re_value_str.match(result_str)
     if isinstance(search_res, re.Match):
-        return search_res.groups()[0]
+        try: 
+            return MAC(search_res.groups()[0])
+        except AttributeError:
+            return search_res.groups()[0]
     
     print("Warning! Unknown SNMP result type for string " + result_str)
     return None

@@ -15,8 +15,9 @@ import sys
 
 from dataclass_defines import *
 import snmp_get
+import create_graphs
 
-def collect_ifPorts(sw: Switch, allowed_types: tuple = (6, 56), skip_if_down: bool = True) -> Switch:
+def collect_ifPorts(sw: Switch, allowed_types: tuple = ('*'), filtered_types: tuple = (), skip_if_down: bool = True) -> Switch:
     """
     OIDs
     1.3.6.1.2.1.2.2.1.1 #ifIndex
@@ -33,15 +34,17 @@ def collect_ifPorts(sw: Switch, allowed_types: tuple = (6, 56), skip_if_down: bo
         ifPhyAddr = snmp_get.get_objid(sw.connection, "ifPhysAddress." + str(id))
         ifDescr = snmp_get.get_objid(sw.connection, "ifDescr." + str(id))
         
-        # check if physical port
+        # check port type
         ifType = snmp_get.get_objid(sw.connection, "ifType." + str(id))
-        # skip port if by default not an ethernet or fibre channel
         # see all types here https://www.iana.org/assignments/ianaiftype-mib/ianaiftype-mib
         if '*' not in allowed_types and ifType not in allowed_types:
             continue
+        if ifType in filtered_types:
+            continue
         
-        ifOperStatus = snmp_get.get_objid(sw.connection, "ifOperStatus." + str(id))
-        if skip_if_down and ifOperStatus == 2:
+        if skip_if_down:
+            ifOperStatus = snmp_get.get_objid(sw.connection, "ifOperStatus." + str(id))
+            if ifOperStatus == 2:
                 continue
         
         sw.ports[id] = SPort(id, ifDescr, MAC(ifPhyAddr), ifOperStatus == 2, set(), "")
@@ -59,15 +62,30 @@ def collect_bPorts(connection: snmp_conn_obj) -> dict:
         bPort_to_ifPort[bport] = snmp_get.get_objid(connection, "1.3.6.1.2.1.17.1.4.1.2." + str(bport))
     
     return bPort_to_ifPort
-       
-def collect_devices(sw: Switch) -> Switch:
+
+def collect_iptable(connection: snmp_conn_obj, table : dict = {}) -> dict:
+    q_iptable_mac = snmp_get.walk_objid(connection, "1.3.6.1.2.1.4.22.1.2")
+    q_iptable_ip = snmp_get.walk_objid(connection, "1.3.6.1.2.1.4.22.1.3")
+    
+    if len(q_iptable_ip) == len(q_iptable_mac):
+        table_mac_iter = iter(q_iptable_mac.values())
+        table_ip_iter = iter(q_iptable_ip.values())
+        for mac in table_mac_iter:
+            table[mac] = next(table_ip_iter)
+    
+    print(table)
+    return table
+    
+def collect_devices(sw: Switch, query_hostname=True) -> Switch:
     # http://oid-info.com/get/1.3.6.1.2.1.2.2.1.3
-    collect_ifPorts(sw, allowed_types=('*'), skip_if_down=True)
+    collect_ifPorts(sw, allowed_types=(6, 56, 161))
     for port in sw.ports.values():
         if port.mac != MAC((0, 0, 0, 0, 0, 0)):
             sw.macs.append(port.mac)
 
     bPort_to_ifPort = collect_bPorts(sw.connection)
+    if query_hostname:
+        mac_to_ip = collect_iptable(sw.connection)
     
     """
     # get learned macs and assosciate to phy port
@@ -88,14 +106,17 @@ def collect_devices(sw: Switch) -> Switch:
         mac_ifport = None
         if mac_bport in bPort_to_ifPort:
             mac_ifport = bPort_to_ifPort[mac_bport]
+            
+        mac_hostname = ""
+        if query_hostname:
+            if mac in mac_to_ip:
+                mac_hostname = mac_to_ip[mac]
         
         if mac_ifport in sw.ports:
-            sw.ports[mac_ifport].nodes.add(Node(mac, "", False))
-        
+            # TODO switch detection
+            sw.ports[mac_ifport].nodes.add(Node(mac, mac_hostname, False))
+            
     return sw
-    
-    # check out vlans
-    #print(snmp_get.walk_objid(connection, "1.3.6.1.2.1.17.7.1.4.3.1.1"))
     
 def main():
     switch0 = Switch("Mellanox", [], {}, snmp_conn_obj("10.161.56.25"))
@@ -104,9 +125,14 @@ def main():
     collect_devices(switch0)
     collect_devices(switch1)
     
-    print(switch0.ports)
-    print(switch1.ports)
+    graph = create_graphs.switch_to_graph(switch0)
+    graph = create_graphs.switch_to_graph(switch1, graph)
     
+    graph.format='png'
+    graph.render('test-graph')
+    
+    #print(switch0.ports)
+    #print(switch1.ports)
     
 if __name__ == "__main__":
     sys.exit(main())
