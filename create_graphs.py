@@ -9,12 +9,12 @@ def switch_to_graph(sw : Switch, graph : graphviz.Digraph = graphviz.Digraph(nam
 
     with graph.subgraph(name='cluster_' + str(sw.name)) as sub:
         sub.attr(start = 'regular')
-        sub.node(sw.connection.address, label='Switch ' + str(sw.name), shape='box3d', pos='0,0(\'!\')?')
+        sub.node(sw.connection.hostname, label='Switch ' + str(sw.name), shape='box3d', pos='0,0(\'!\')?')
         # fill with ports
         for port in sw.ports.values():
             if not skip_empty_ports or port.nodes:
                 sub.node(str(port.number), label='Port ' + str(port.name), shape='box')
-                sub.edge(sw.connection.address, str(port.number), len='2', minlen='1')
+                sub.edge(sw.connection.hostname, str(port.number), len='2', minlen='1')
             
     # add device nodes
     for port in sw.ports.values():

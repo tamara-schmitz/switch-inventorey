@@ -23,7 +23,7 @@ class MAC:
             self.address = tuple(l)
         
         if (isinstance(starter, str)):
-            starter = starter.strip()
+            starter = starter.strip("\"., ")
             splitter = ' '
             if '-' in starter:
                 splitter = '-'
@@ -31,8 +31,7 @@ class MAC:
                 splitter = ':'
             l = starter.strip().split(splitter)
             
-            if (len(l) == 6 and 
-                all(len(el) == 2 for el in l)):
+            if (len(l) == 6):
                 self.address = tuple(int(el, 16) for el in l)
             
         if not self.address:
