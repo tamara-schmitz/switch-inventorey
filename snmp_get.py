@@ -1,41 +1,45 @@
 import easysnmp
 from dataclass_defines import *
 
-def snmp_result_extract_value(in_value):
+def result_extract_value(in_value):
         try: 
             return MAC(in_value)
         except AttributeError:
             return in_value
+        
+def create_easysnmp_sess(conn_obj: SnmpConn) -> easysnmp.Session:
+    return easysnmp.Session(hostname=conn_obj.hostname,
+                            community=conn_obj.community,
+                            version=conn_obj.version,
+                            security_username=conn_obj.user,
+                            auth_password=conn_obj.password)
     
-def get_objid(sess: easysnmp.Session, objid: str):
-    item = sess.get(objid)
-    return (snmp_result_extract_value()
+def get_objid(connection, objid: str):
+    conn = connection
+    if isinstance(connection, SnmpConn):
+        conn = create_easysnmp_sess(connection)
+    if not isinstance(conn, easysnmp.Session):
+        raise ArgumentError("Expecting an easysnmp.Session or SnmpConn")
+        
+    conn.use_sprint_value = True
+    
+    item = conn.get(objid)
+    item.value = result_extract_value(item.value)
+    return item
  
-def walk_objid(connection: snmp_conn_obj, objid: str) -> dict:
-    cmd = [ "snmpwalk", "-O0sUX" ]
-    if connection.version == "1" or connection.version == "2c":
-        cmd.extend([ "-v" + connection.version, "-c", connection.community,
-                    connection.address, objid ])
-    
-    elif connection.version == "3":
-        cmd.extend([ "-v" + connection.version,
-                    "-l", "authNoPriv", "-a", "MD5",
-                    "-u", connection.user, "-A", connection.password,
-                    connection.address, objid ])
-    else:
-        raise AttributeError("Unknown SNMP Connection Version.")
+def walk_objid(connection, objid: str) -> dict:
+    conn = connection
+    if isinstance(connection, SnmpConn):
+        conn = create_easysnmp_sess(connection)
+    if not isinstance(conn, easysnmp.Session):
+        raise ArgumentError("Expecting an easysnmp.Session or SnmpConn")
         
-    walk_lines = exec_cmd(cmd, True).stdout.decode("utf-8").strip().split('\n')
-    if '' in walk_lines:
-        walk_lines.remove('')
-        
-    walk_dict = {}
-    # split each line into key and value, add to dict
-    for line in walk_lines:
-        walk_k_v = line.split('=')
-        walk_k_v[0] = walk_k_v[0].strip()
-        walk_k_v[1] = snmp_result_extract_value(walk_k_v[1])
-        walk_dict[walk_k_v[0]] = walk_k_v[1]
+    conn.use_sprint_value = True
+       
+    res = conn.walk(objid)
     
-    return walk_dict
+    for item in res:
+        item.value = result_extract_value(item.value)
+    
+    return res
     

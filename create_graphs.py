@@ -6,6 +6,8 @@ def switch_to_graph(sw : Switch, graph : graphviz.Digraph = graphviz.Digraph(nam
     graph.attr(dpi = '200')
     graph.attr(layout = 'neato')
     graph.attr(compound = 'true')
+    graph.attr(overlap = 'false')
+    graph.attr(splines = 'curved')
 
     with graph.subgraph(name='cluster_' + str(sw.name)) as sub:
         sub.attr(start = 'regular')

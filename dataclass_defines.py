@@ -1,4 +1,19 @@
 from dataclasses import dataclass
+import easysnmp
+
+@dataclass
+class SnmpConn:
+    hostname: str
+    version: int = 2
+    community: str = "public"
+    user: str = "admin"
+    password: str = "admin"
+    
+    def __copy__(self):
+        return type(self)(self.hostname, self.version,
+                          self.community, self.user, self.password)
+    def copy(self):
+        return self.__copy__()
 
 @dataclass
 class MAC:
@@ -47,19 +62,11 @@ class MAC:
         return ".".join(map(str,self.address))
     
     def __repr__(self):
-        return self.as_str()
+        return 'MAC(' + self.as_str() + ')'
     
     def __hash__(self):
         return hash(self.address)
 
-@dataclass
-class snmp_conn_obj:
-    address: str
-    version: str = "2c"
-    community: str = "public"
-    user: str = "admin"
-    pasword: str = "admin"
-    
 @dataclass
 class machine:
     mac: MAC
@@ -79,7 +86,8 @@ class Switch:
     name: str
     macs: list
     ports: dict
-    connection: snmp_conn_obj
+    connection: SnmpConn
+    vlans: tuple = ()
     
     def __hash__(self):
         return hash((self.name, self.connection.address))
@@ -107,7 +115,6 @@ class SPort:
 class Node:
     mac: MAC
     hostname: str
-    vlan: str = ""
     is_switch: Switch = None
     
     def __hash__(self):
