@@ -12,7 +12,8 @@ def create_easysnmp_sess(conn_obj: SnmpConn) -> easysnmp.Session:
                             community=conn_obj.community,
                             version=conn_obj.version,
                             security_username=conn_obj.user,
-                            auth_password=conn_obj.password)
+                            auth_password=conn_obj.password,
+                            timeout=2, retries=2)
     
 def get_objid(connection, objid: str):
     conn = connection

@@ -99,7 +99,6 @@ class Switch:
 class SPort:
     number: int
     name: str
-    #parent: Switch
     mac: MAC
     up: bool
     nodes: set

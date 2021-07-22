@@ -83,28 +83,23 @@ def collect_bPorts(connection: easysnmp.Session) -> dict:
 
 def collect_iptable(sw: Switch, table : dict = {}) -> dict:
     q_iptable_mac = snmp_get.walk_objid(sw.connection, "1.3.6.1.2.1.4.22.1.2")
-    q_iptable_ip = snmp_get.walk_objid(sw.connection, "1.3.6.1.2.1.4.22.1.3")
-    
-    if len(q_iptable_ip) == len(q_iptable_mac):
-        table_mac_iter = iter(q_iptable_mac)
-        table_ip_iter = iter(q_iptable_ip)
-        for mac in table_mac_iter:
-            table[mac.value] = next(table_ip_iter).value
-    
+    for item in q_iptable_mac:
+        ip = re.match(r".*\.(\d+\.\d+\.\d+\.\d+)$", item.oid_index)
+        if ip and ip.groups():
+            table[ip.groups()[0]] = item.value
     return table
     
 def collect_devices(sw: Switch, mac_to_ip_table: dict = None) -> Switch:
     
-    #collect_ifPorts(sw, allowed_types=("ethernetCsmacd", "fibreChannel", "ieee8023adLag"))
     #collect_ifPorts(sw, allowed_types=("ethernetCsmacd", "fibreChannel"))
     collect_ifPorts(sw, filtered_types=("ieee8023adLag", "softwareLoopback"))
     bPort_to_ifPort = collect_bPorts(sw.connection)
     collect_vlans(sw)
         
+    # query VLAN for port
     for bport in bPort_to_ifPort:
         ifPort = bPort_to_ifPort[bport]
         if ifPort in sw.ports and not sw.ports[ifPort].vlan:
-            # query VLAN
             # VLAN id 1.3.6.1.4.1.9.9.68.1.2.2.1.2
             q_ifVlanID = snmp_get.get_objid(sw.connection, "1.3.6.1.4.1.9.9.68.1.2.2.1.2." + str(ifPort))
             if not 'NOSUCH' in q_ifVlanID.snmp_type:
@@ -132,7 +127,8 @@ def collect_devices(sw: Switch, mac_to_ip_table: dict = None) -> Switch:
         macs_on_bridge = snmp_get.walk_objid(conn, "1.3.6.1.2.1.17.4.3.1.1")
         for mac in macs_on_bridge:
             mac = mac.value
-            mac_bport = snmp_get.get_objid(conn, "1.3.6.1.2.1.17.4.3.1.2." + mac.as_decstr()).value
+            mac_decstr = mac.as_decstr()
+            mac_bport = snmp_get.get_objid(conn, "1.3.6.1.2.1.17.4.3.1.2." + mac_decstr).value
             mac_ifport = None
             if mac_bport in bPort_to_ifPort:
                 mac_ifport = bPort_to_ifPort[mac_bport]
@@ -140,18 +136,16 @@ def collect_devices(sw: Switch, mac_to_ip_table: dict = None) -> Switch:
             if mac_ifport not in sw.ports:
                 continue
             
-            mac_status = snmp_get.get_objid(conn, "1.3.6.1.2.1.17.4.3.1.3." + mac.as_decstr()).value
+            mac_status = snmp_get.get_objid(conn, "1.3.6.1.2.1.17.4.3.1.3." + mac_decstr).value
             # skip if MAC is not learned or static configuration
             if mac_status != '3' and mac_status != '4':
                 continue
             
             mac_hostname = ""
-            if mac_to_ip_table:
-                if mac in mac_to_ip_table:
-                    mac_hostname = mac_to_ip_table[mac]
+            if mac_to_ip_table and mac in mac_to_ip_table:
+                mac_hostname = mac_to_ip_table[mac]
             
             if mac_ifport in sw.ports:
-                # TODO switch detection
                 sw.ports[mac_ifport].nodes.add(Node(mac, mac_hostname))
                 
     return sw
@@ -171,7 +165,8 @@ def main():
     print("Creating graph...")
     graph = create_graphs.switch_to_graph(switch0)
     graph = create_graphs.switch_to_graph(switch1, graph)
-    graph.format='png'
+    graph.format='pdf'
+    graph.attr(dpi = '200')
     graph.render('test-graph')
     
 if __name__ == "__main__":
