@@ -15,7 +15,7 @@ def switch_to_graph(sw : Switch, graph : graphviz.Digraph = graphviz.Digraph(nam
         for port in sw.ports.values():
             if not skip_empty_ports or port.nodes:
                 label = '''<<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">
-                            <TR><TD ROWSPAN="2">Port {0}</TD></TR>
+                            <TR><TD COLSPAN="2">Port {0}</TD></TR>
                             <TR><TD>Nr {1}</TD><TD>VLAN {2}</TD></TR>
                         </TABLE>>'''.format(port.name, str(port.number), port.vlan)
                 sub.node(str(port.number), label=label, shape='box', fontsize='16')

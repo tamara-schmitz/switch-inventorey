@@ -66,7 +66,10 @@ class MAC:
     
     def __hash__(self):
         return hash(self.address)
-
+    
+    def __iter__(self):
+        return iter(self.as_str())
+    
 @dataclass
 class machine:
     mac: MAC
