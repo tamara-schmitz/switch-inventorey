@@ -65,7 +65,7 @@ def collect_ifPorts(sw: Switch, allowed_types: tuple = ('*'), filtered_types: tu
             if 'down' in ifOperStatus:
                 continue
             
-        sw.ports[id] = SPort(id, ifDescr, MAC(ifPhyAddr), 'up' in ifOperStatus, set(), None)
+        sw.ports[id] = SPort(id, ifDescr, MAC(ifPhyAddr), 'up' in ifOperStatus, set())
         
     return sw
 
@@ -96,15 +96,6 @@ def collect_devices(sw: Switch, mac_to_ip_table: dict = None) -> Switch:
     bPort_to_ifPort = collect_bPorts(sw.connection)
     collect_vlans(sw)
         
-    # query VLAN for port
-    for bport in bPort_to_ifPort:
-        ifPort = bPort_to_ifPort[bport]
-        if ifPort in sw.ports and not sw.ports[ifPort].vlan:
-            # VLAN id 1.3.6.1.4.1.9.9.68.1.2.2.1.2
-            q_ifVlanID = snmp_get.get_objid(sw.connection, "1.3.6.1.4.1.9.9.68.1.2.2.1.2." + str(ifPort))
-            if not 'NOSUCH' in q_ifVlanID.snmp_type:
-                sw.ports[ifPort].vlan = q_ifVlanID.value
-               
     for port in sw.ports.values():
         if port.mac != MAC((0, 0, 0, 0, 0, 0)):
             sw.macs.append(port.mac)
@@ -146,7 +137,7 @@ def collect_devices(sw: Switch, mac_to_ip_table: dict = None) -> Switch:
                 mac_hostname = mac_to_ip_table[mac]
             
             if mac_ifport in sw.ports:
-                sw.ports[mac_ifport].nodes.add(Node(mac, mac_hostname))
+                sw.ports[mac_ifport].nodes.add(Node(mac, mac_hostname, False, vlan))
                 
     return sw
 

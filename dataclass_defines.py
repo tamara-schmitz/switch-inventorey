@@ -32,7 +32,7 @@ class MAC:
             for el in starter:
                 if isinstance(el, str) and len(el) <= 2:
                     el = int(el, 16)
-                if not isinstance(el, int):
+                if not isinstance(el, int) or el >= 16 ** 2:
                     raise AttributeError("Malformed MAC given")
                 l.append(el)
             self.address = tuple(l)
@@ -69,20 +69,6 @@ class MAC:
     
     def __iter__(self):
         return iter(self.as_str())
-    
-@dataclass
-class machine:
-    mac: MAC
-    vlan: str
-    switch: str
-    port: int
-    port_name: str
-    
-    def __hash__(self):
-        return hash(self.mac, self.switch, self.port)
-    
-    def __eq__(self, other):
-        return hash(self) == hash(other)
 
 @dataclass
 class Switch:
@@ -105,7 +91,6 @@ class SPort:
     mac: MAC
     up: bool
     nodes: set
-    vlan: str = ""
     
     def __hash__(self):
         return hash((self.number, self.parent))
@@ -118,6 +103,7 @@ class Node:
     mac: MAC
     hostname: str
     is_switch: Switch = None
+    vlan: str = ""
     
     def __hash__(self):
         return hash(self.mac)
