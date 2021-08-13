@@ -2,10 +2,10 @@ import easysnmp
 from dataclass_defines import *
 
 def result_extract_value(in_value):
-        try: 
-            return MAC(in_value)
-        except AttributeError:
-            return in_value
+    try: 
+        return MAC(in_value)
+    except AttributeError:
+        return in_value
         
 def create_easysnmp_sess(conn_obj: SnmpConn) -> easysnmp.Session:
     return easysnmp.Session(hostname=conn_obj.hostname,

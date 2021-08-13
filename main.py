@@ -49,9 +49,6 @@ def collect_ifPorts(sw: Switch, allowed_types: tuple = ('*'), filtered_types: tu
     for id in q_ifIndexes:
         id = id.value
         
-        ifPhyAddr = snmp_get.get_objid(sw.connection, "ifPhysAddress." + str(id)).value
-        ifDescr = snmp_get.get_objid(sw.connection, "ifDescr." + str(id)).value
-        
         # check port type
         ifType = snmp_get.get_objid(sw.connection, "ifType." + str(id)).value
         # see all types here 
@@ -65,6 +62,9 @@ def collect_ifPorts(sw: Switch, allowed_types: tuple = ('*'), filtered_types: tu
             if 'down' in ifOperStatus:
                 continue
             
+        ifPhyAddr = snmp_get.get_objid(sw.connection, "ifPhysAddress." + str(id)).value
+        ifDescr = snmp_get.get_objid(sw.connection, "ifDescr." + str(id)).value
+        
         sw.ports[id] = SPort(id, ifDescr, MAC(ifPhyAddr), 'up' in ifOperStatus, set())
         
     return sw
