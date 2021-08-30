@@ -156,7 +156,7 @@ def main():
     print("Creating graph...")
     graph = create_graphs.switch_to_graph(switch0)
     graph = create_graphs.switch_to_graph(switch1, graph)
-    graph.format='pdf'
+    graph.format='png'
     graph.attr(dpi = '200')
     graph.render('test-graph')
     
